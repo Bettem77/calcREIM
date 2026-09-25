@@ -15,6 +15,20 @@
 
 例: `eta_star_v5_30um_500Hz_20.xlsx`、`eta_star_v5_box_1000Hz_10.xlsx`
 
+## プロジェクト共通の注意点(全スクリプト)
+
+- **Windowsパスのraw文字列化**: このプロジェクトの各スクリプトは冒頭で
+  `INPUT_DIR = "C:\Users\USER\Desktop\calcREIM"` のように書かれがちだが、raw文字列にしないと
+  `\U` がUnicodeエスケープと誤認識されて `SyntaxError: (unicode error) 'unicodeescape' codec...`
+  になる。**新しいスクリプトを追加・コピーしたときは必ず `INPUT_DIR = r"C:\Users\USER\Desktop\calcREIM"`
+  のように `r` プレフィックスを付けること**(`effective_mass_batch.py`、`force_waveform_batch.py`
+  の両方で実際に発生した)。
+- **依存パッケージ**: `pandas`, `numpy`, `openpyxl`, `matplotlib` が必要(`python -m pip install
+  pandas numpy openpyxl matplotlib` で導入済み)。
+- **PNG保存時の `OSError: [Errno 22] Invalid argument`**: コードの不具合ではなく、たいてい出力先の
+  pngファイルを画像ビューアなど別プロセスで開いたままファイルロックされているのが原因。該当ファイルを
+  閉じてから再実行すれば解消する。
+
 ### 旧命名規則からの変換ルール
 
 過去に別の命名規則(`eta_star_v5_D<N>_<f>Hz_<level>.xlsx`、level が `1`/`2`/`3`/`4`)で追加された
@@ -36,13 +50,8 @@
   を読む
 - 出力先: `./output/`
 
-### 既知の注意点
+## force_waveform_batch.py
 
-- **Windowsパスのraw文字列化**: `INPUT_DIR` を `"C:\Users\..."` のようにraw文字列にせず書くと、
-  `\U` がUnicodeエスケープと誤認識されて `SyntaxError: (unicode error) 'unicodeescape' codec...`
-  になる。必ず `r"C:\Users\..."` の形で書くこと。
-- **依存パッケージ**: `pandas`, `numpy`, `openpyxl`, `matplotlib` が必要(`python -m pip install
-  pandas numpy openpyxl matplotlib` で導入済み)。
-- **PNG保存時の `OSError: [Errno 22] Invalid argument`**: コードの不具合ではなく、たいてい
-  `output/effective_mass_by_size.png` を画像ビューアなど別プロセスで開いたままファイルロックされて
-  いるのが原因。該当ファイルを閉じてから再実行すれば解消する。
+`eta_star_v5_*.xlsx` の `TimeData`(A=時刻[s], B=力[N])から、計算・差し引き・規格化をせず力波形を
+そのままグラフ化するスクリプト。粒径ラベルごとに `OUTPUT_DIR/waveform_<label>.png` を出力
+(行=周波数, 列=加速度レベル)。出力先: `./output_waveform/`
