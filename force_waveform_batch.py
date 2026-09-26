@@ -14,12 +14,14 @@ import matplotlib.pyplot as plt
 
 # ===================== 設定 =====================
 INPUT_DIR = r"C:\Users\USER\Desktop\calcREIM"
+ETASTAR_DIR = os.path.join(INPUT_DIR, "eta_star")   # eta_star_v5_*.xlsx はここに格納
 OUTPUT_DIR = "./output_waveform"
 N_CYCLES = 3          # 先頭から何周期分を描くか (時間軸 = N_CYCLES / f)
 # ===============================================
 
 FNAME_RE = re.compile(
-    r"eta_star_v\d+_(?P<label>.+)_(?P<f>\d+(?:\.\d+)?)Hz_(?P<level>[^_.]+)\.xlsx$", re.IGNORECASE)
+    r"eta_star_v\d+_(?P<label>.+)_(?P<f>\d+(?:\.\d+)?)Hz_(?P<level>[^_.]+)(?:_(?P<date>\d+))?\.xlsx$",
+    re.IGNORECASE)
 
 
 def read_one(path):
@@ -37,7 +39,9 @@ def read_one(path):
 
 def main():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
-    rs = [r for r in (read_one(p) for p in sorted(glob.glob(os.path.join(INPUT_DIR, "*.xlsx")))) if r]
+    files = sorted(p for p in glob.glob(os.path.join(ETASTAR_DIR, "*.xlsx"))
+                   if not os.path.basename(p).startswith("~$"))
+    rs = [r for r in (read_one(p) for p in files) if r]
     if not rs:
         print("対象ファイルなし"); return
     for label in sorted({r["label"] for r in rs}):

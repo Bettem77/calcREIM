@@ -9,6 +9,8 @@ eta_star_v5 形式の xlsx から粉体の複素有効質量 M_p を一括計算
         - TimeData    : A=時刻[s], B=力[N], D=加速度[m/s^2]
 出力 : OUTPUT_DIR/effective_mass_summary.xlsx
        OUTPUT_DIR/effective_mass_by_size.png  (上段 Re, 中段 -Im, 下段 複素平面)
+       ※ 同じ条件(粒径・f・level)で日付違いなど複数ファイルがある場合は、点ごとの単純プロットではなく
+         同じfでの平均値±標準偏差のエラーバー表示にする(1点だけの場合は誤差0のマーカーになる)。
 
 計算(シートと同一):
   X = Σ a·exp(-j2πft), Y = Σ F·exp(-j2πft), M = X*·Y/|X|^2,  η* = -2π·Im(M)/m_tot
@@ -27,6 +29,7 @@ import matplotlib.pyplot as plt
 
 # ===================== 設定 =====================
 INPUT_DIR = r"C:\Users\USER\Desktop\calcREIM"
+ETASTAR_DIR = os.path.join(INPUT_DIR, "eta_star")   # eta_star_v5_*.xlsx はここに格納
 OUTPUT_DIR = "./output"
 EMPTY_LABELS = ["box"]          # 空ボックスのラベル (m_p=0 も空扱い)
 ACC_FACTOR = -1000 / 3.18       # D列が空のとき G列→加速度 換算
@@ -46,7 +49,8 @@ LEVEL_TO_ACC = 10               # 凡例表示: level×10 ≈ A [m/s^2]
 # ===============================================
 
 FNAME_RE = re.compile(
-    r"eta_star_v\d+_(?P<label>.+)_(?P<f>\d+(?:\.\d+)?)Hz_(?P<level>[^_.]+)\.xlsx$", re.IGNORECASE)
+    r"eta_star_v\d+_(?P<label>.+)_(?P<f>\d+(?:\.\d+)?)Hz_(?P<level>[^_.]+)(?:_(?P<date>\d+))?\.xlsx$",
+    re.IGNORECASE)
 
 
 def num(v):
@@ -148,15 +152,20 @@ def plot_grid(p, path, re_fallback):
     fig, ax = plt.subplots(3, len(Ds), figsize=(max(4.4 * len(Ds), 11), 12), squeeze=False)
     for j, D in enumerate(Ds):
         for lv in lvs:
-            h = q[(q.D_um == D) & (q.series == lv)].sort_values("f")
+            h = q[(q.D_um == D) & (q.series == lv)]
             if h.empty:
                 continue
+            # 同じ f (条件) で日付違いなど複数測定がある場合は平均±標準偏差のエラーバーにする
+            g = h.groupby("f")[["ReMp_over_mp", "negImMp_over_mp"]].agg(["mean", "std"])
+            g = g.sort_index()
+            re_mean, re_std = g[("ReMp_over_mp", "mean")], g[("ReMp_over_mp", "std")].fillna(0)
+            im_mean, im_std = g[("negImMp_over_mp", "mean")], g[("negImMp_over_mp", "std")].fillna(0)
             lab = f"A≈{lv * LEVEL_TO_ACC:g}"
-            ax[0, j].plot(h.f, h.ReMp_over_mp, "o-", label=lab)
-            ax[1, j].plot(h.f, h.negImMp_over_mp, "o-", label=lab)
-            ax[2, j].plot(h.ReMp_over_mp, h.negImMp_over_mp, "o-", label=lab)
-            for _, r in h.iterrows():
-                ax[2, j].annotate(f"{r.f:g}", (r.ReMp_over_mp, r.negImMp_over_mp),
+            ax[0, j].errorbar(g.index, re_mean, yerr=re_std, fmt="o-", capsize=3, label=lab)
+            ax[1, j].errorbar(g.index, im_mean, yerr=im_std, fmt="o-", capsize=3, label=lab)
+            ax[2, j].errorbar(re_mean, im_mean, xerr=re_std, yerr=im_std, fmt="o-", capsize=3, label=lab)
+            for f_val, r_re, r_im in zip(g.index, re_mean, im_mean):
+                ax[2, j].annotate(f"{f_val:g}", (r_re, r_im),
                                   fontsize=6, xytext=(2, 2), textcoords="offset points")
         ax[0, j].set_title(f"D={D:g} um")
         for i in (0, 1):
@@ -184,7 +193,8 @@ def main():
     if len(sys.argv) >= 3 and sys.argv[1] == "--from-summary":
         df = pd.read_excel(sys.argv[2], sheet_name="all_files")
     else:
-        files = sorted(glob.glob(os.path.join(INPUT_DIR, "*.xlsx")))
+        files = sorted(p for p in glob.glob(os.path.join(ETASTAR_DIR, "*.xlsx"))
+                       if not os.path.basename(p).startswith("~$"))
         df = pd.DataFrame([r for r in (read_one(x) for x in files) if r])
     if df.empty:
         print("対象ファイルなし"); return
