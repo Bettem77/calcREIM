@@ -15,7 +15,28 @@
 
 例: `eta_star_v5_30um_500Hz_20.xlsx`、`eta_star_v5_box_1000Hz_10.xlsx`
 
-## フォルダ構成
+## 現在の運用フォルダ: `data_0927/`(2026-09-27〜)
+
+生データを全件統一命名にリネームし、xlsx・集計をすべて作り直したものを `data_0927/` にまとめて運用している。
+全スクリプトの `DATA_DIR` がここを指す(下の旧構成のルート直下 `Rawdata/`・`eta_star/`・`output/` は旧データとして残置)。
+
+- `data_0927/Rawdata/`: 生データCSV(`<label>_<f>Hz_<level>_<date>[-N].csv`)。
+- `data_0927/eta_star/`: `calc_eta_star.py` が生成した `eta_star_v5_*.xlsx`。
+- `data_0927/output/`、`data_0927/output_waveform/`: 集計・グラフの出力先。
+- `data_0927/params.csv`: 生データごとの `m_p` / `m_c` / `n_points`。`calc_eta_star.py` はここに値があれば
+  使い、空欄のものだけ対話入力で聞く。新しい生データを追加したら行を追記すること。
+- `data_0927/rename_map.csv`: `修正用フォルダ/` の元ファイル名 → 新ファイル名、日付の根拠、旧xlsxとの対応の記録。
+- `修正用フォルダ/`: リネーム前の元CSV(バックアップ、変更しない)。
+- テンプレートは旧 `eta_star/eta_star_v5_box_1000Hz_10.xlsx` を参照している。
+
+命名の補足:
+- 繰り返し測定の2回目以降は日付の後ろに `-2`、`-3` を付ける(1回目は付けない)。
+- 日付はファイルの更新日時から取った(05-27、06-22、09-25 など)が、コピーで更新日時が変わるため測定日とは
+  限らない。Box(50〜300Hz)は 0601、300um の 75/400/700Hz は 0924 とユーザー指定。
+- 過去の手作業xlsxは加速度の符号を反転、`calc_eta_star.py` は力の符号を反転しているが、F/a は同じなので M・η* は一致する
+  (作り直し時に旧xlsx 206本中202本で M が完全一致することを確認済み)。
+
+## フォルダ構成(旧)
 
 ファイル数が増えたため、生データと計算用xlsxをサブフォルダに分けている(全スクリプトが対応済み)。
 
@@ -105,14 +126,18 @@ DSA(動的信号解析器)が出力する生データCSV(`[Header]`/`[Calibratio
 
 ## eta_star_summary.py
 
-`eta_star/` 内の `eta_star_v5_*.xlsx`(box除く)から η* / Re(M) / Im(M) を集計し、社内の既存資料と
+`eta_star/` 内の `eta_star_v5_*.xlsx` から η* / Re(M) / Im(M) を集計し、社内の既存資料と
 同じ配列形式でまとめるスクリプト。η* は effective_mass_batch.py と同じ式で TimeData から都度
 再計算する(シートのキャッシュ値には頼らない。空ボックス差し引き前の、そのファイル1本の値)。
 同じ D・A(=level×10)・f の条件で日付違いなど複数ファイルがある場合は平均値を使う。
 
 - 出力: `output/eta_star_summary.xlsx`
   - `D_f_table` シート: 行=(D[mm], A[m/s2])、列=f[Hz]、値=η* の一覧表
-  - `by_frequency` シート: f[Hz]ごとに D/a_amp/η*/Re/Im の表を横に並べたもの
+  - `D_f_table_all` シート: D_f_table の平均しない版。行=(D, A, 測定=日付[-繰り返し番号])、列=f、値=η*
+  - `by_frequency` シート: f[Hz]ごとに D/a_amp/η*/Re/Im の表を横に並べたもの(同条件は平均。各ブロックはその f で測定のある行だけを詰めて書く)
+  - `by_frequency_all` シート: by_frequency と同じ並びで平均せず、ファイルごとに1行(右端に file 列)
+  - by_frequency / by_frequency_all の各周波数ブロック末尾には、同じ f の空ボックスの値を D="box" として載せる
+    (box は m_p=0 なので η* = -2π·Im(M)/m_c。粉体側の値から差し引きはしていない)。D_f_table には box を入れない
   - `raw` シート: 集計前の生データ(ファイルごとの1行、検算用)
 - `effective_mass_batch.py` / `force_waveform_batch.py` / `eta_star_summary.py` は Excelで
   ファイルを開いているときにできるロックファイル(`~$eta_star_v5_....xlsx`)を除外して読む

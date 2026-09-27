@@ -5,18 +5,21 @@ DSA(動的信号解析器)の生データCSV([Header]/[Calibration]/[TIME_INST] 
 eta_star_v5 形式の計算用xlsxの「TimeData」シートに自動転記する。
 (手作業での「A列=時刻, B列=力, D列=加速度 を貼り付け」を代わりに行うスクリプト)
 
-入力 : RAWDATA_DIR (既定 "Rawdata" フォルダ) 内の <label>_<f>Hz_<level>_<date>.csv
-        例) Rawdata/100um_50Hz_5_0926.csv
+入力 : RAWDATA_DIR (既定 "data_0927/Rawdata" フォルダ) 内の <label>_<f>Hz_<level>_<date>[-N].csv
+        例) Rawdata/100um_50Hz_5_0926.csv、繰り返し測定の2回目以降は 30um_50Hz_10_0527-2.csv
+        命名規則に合わないCSVは [無視] と表示して飛ばす。
+        PARAMS_CSV (data_0927/params.csv) に生データ名ごとの m_p / m_c / n_points があれば
+        その値を使い、無いものだけ対話入力で聞く。
         - [Calibration] の "EU/V" 行から、各チャンネルの物理量(mm/g/m/s2/N など)への
           換算係数[EU/V]を読み取る(電圧 × 係数 = 物理量)。
         - [TIME_INST] の CH電圧のうち、単位が "N" のチャンネルを力、"m/s2" のチャンネルを
           加速度として使う(チャンネル番号を直接は決め打ちしない)。
 
-出力 : ETASTAR_DIR (既定 "eta_star" フォルダ) 内に eta_star_v5_<label>_<f>Hz_<level>_<date>.xlsx
+出力 : ETASTAR_DIR (既定 "data_0927/eta_star" フォルダ) 内に eta_star_v5_<label>_<f>Hz_<level>_<date>[-N].xlsx
         (生データCSVの日付をそのまま末尾に付けるので、同じ label/f/level の過去データと
          ファイル名が衝突しない。effective_mass_batch.py / force_waveform_batch.py 側の
          ファイル名パターンも、この末尾日付を許容するよう対応済み)
-        TEMPLATE_XLSX(eta_star フォルダ内の eta_star_v5_box_1000Hz_10.xlsx)を複製し、
+        TEMPLATE_XLSX(旧 eta_star フォルダ内の eta_star_v5_box_1000Hz_10.xlsx)を複製し、
         TimeData!A/B/D と EtaStar_Acc!B6(f) を書き換える。
         既定では出力先が既に存在する場合は上書きしない(--overwrite を付けると上書きする)。
 
@@ -26,6 +29,7 @@ eta_star_v5 形式の計算用xlsxの「TimeData」シートに自動転記す�
         ※ 使用するデータ点数 N も実行時に周波数(f)ごとに対話入力できる
           (先頭から何点使うか。空欄なら全点使用)。
 """
+import csv
 import re
 import glob
 import os
@@ -34,9 +38,11 @@ from openpyxl import load_workbook
 
 # ===================== 設定 =====================
 INPUT_DIR = r"C:\Users\USER\Desktop\calcREIM"
-RAWDATA_DIR = os.path.join(INPUT_DIR, "Rawdata")    # 生データCSVはここに置く
-ETASTAR_DIR = os.path.join(INPUT_DIR, "eta_star")   # eta_star_v5_*.xlsx の出力/参照先
-TEMPLATE_XLSX = os.path.join(ETASTAR_DIR, "eta_star_v5_box_1000Hz_10.xlsx")
+DATA_DIR = os.path.join(INPUT_DIR, "data_0927")     # 運用中のデータ一式(Rawdata/eta_star/output)
+RAWDATA_DIR = os.path.join(DATA_DIR, "Rawdata")     # 生データCSVはここに置く
+ETASTAR_DIR = os.path.join(DATA_DIR, "eta_star")    # eta_star_v5_*.xlsx の出力先
+PARAMS_CSV = os.path.join(DATA_DIR, "params.csv")   # 生データごとの m_p / m_c / N (あれば対話入力より優先)
+TEMPLATE_XLSX = os.path.join(INPUT_DIR, "eta_star", "eta_star_v5_box_1000Hz_10.xlsx")
 M_C_DEFAULT = 0.88          # 容器(ジグ)質量[g]。プロジェクト内でほぼ一貫している既定値。要確認。
 FORCE_SIGN = -1             # 力チャンネルの符号補正。センサー配線の都合で "EU/V × 電圧" の
                             # そのままの符号だと、既存の正しいxlsx(F と a が正相関)と逆に
@@ -46,16 +52,21 @@ ACC_UNIT_RE = re.compile(r"m/s\^?2", re.IGNORECASE)  # "m/s2" "m/s^2" どちら�
 # ===============================================
 
 RAW_RE = re.compile(
-    r"^(?P<label>.+)_(?P<f>\d+(?:\.\d+)?)Hz_(?P<level>[^_]+)_(?P<date>\d+)\.csv$",
+    r"^(?P<label>.+)_(?P<f>\d+(?:\.\d+)?)Hz_(?P<level>[^_]+)_(?P<date>\d+(?:-\d+)?)\.csv$",
     re.IGNORECASE)
 CH_RE = re.compile(r"CH(\d+)\((.+)\)")
 CH_V_RE = re.compile(r"CH(\d+)\(V\)", re.IGNORECASE)
 
 
+def is_section(line, name):
+    """"[Calibration]" と、Excelで保存し直したCSVの "[Calibration],,,," の両方を許容"""
+    return line.split(",")[0].strip() == name
+
+
 def parse_calibration(lines):
     """[Calibration] セクションから チャンネル番号 -> (単位, 係数[EU/V]) を返す"""
     for i, line in enumerate(lines):
-        if line.strip() == "[Calibration]":
+        if is_section(line, "[Calibration]"):
             header = None
             for j in range(i + 1, len(lines)):
                 cells = [c.strip() for c in lines[j].rstrip("\r\n").split(",")]
@@ -91,7 +102,7 @@ def read_time_inst(lines, ch_time_col, ch_force, factor_force, ch_acc, factor_ac
     col_of_ch = None
     for line in lines:
         s = line.rstrip("\r\n")
-        if s.strip() == "[TIME_INST]":
+        if is_section(s, "[TIME_INST]"):
             in_block = True
             continue
         if not in_block:
@@ -128,6 +139,22 @@ def read_raw_csv(path):
     return t, F, a
 
 
+def load_params():
+    """PARAMS_CSV(raw_file, m_p, m_c, n_points)を読み、生データ名 -> dict を返す。空欄の項目は含めない。"""
+    if not os.path.exists(PARAMS_CSV):
+        return {}
+    params = {}
+    with open(PARAMS_CSV, newline="", encoding="utf-8-sig") as f:
+        for row in csv.DictReader(f):
+            p = {}
+            for key, conv in (("m_p", float), ("m_c", float), ("n_points", int)):
+                v = (row.get(key) or "").strip()
+                if v:
+                    p[key] = conv(v)
+            params[row["raw_file"].strip()] = p
+    return params
+
+
 def ask_m_p(label):
     """粒径labelごとに粉体質量 m_p [g] を対話入力で聞く。空欄ならNone(未入力)のまま返す。"""
     while True:
@@ -155,7 +182,7 @@ def ask_n_points(f_str):
             print("    正の整数を入力してください。空欄なら全点使用します。")
 
 
-def write_xlsx(label, f_str, level, t, F, a, out_path, m_p):
+def write_xlsx(label, f_str, level, t, F, a, out_path, m_p, m_c=M_C_DEFAULT):
     wb = load_workbook(TEMPLATE_XLSX)  # 数式を保持するため data_only=False (既定)
     ws = wb["TimeData"]
 
@@ -172,8 +199,8 @@ def write_xlsx(label, f_str, level, t, F, a, out_path, m_p):
 
     ws_acc = wb["EtaStar_Acc"]
     ws_acc["B6"] = float(f_str)   # 加振周波数(ファイル名から自動設定)
-    ws_acc["B7"] = m_p            # 粉体質量 m_p: 実行時に対話入力(未入力ならNoneのまま空欄)
-    ws_acc["B8"] = M_C_DEFAULT    # 容器質量 m_c: 既定値(要確認)
+    ws_acc["B7"] = m_p            # 粉体質量 m_p: params.csv か対話入力(未入力ならNoneのまま空欄)
+    ws_acc["B8"] = m_c            # 容器質量 m_c: params.csv か既定値(要確認)
 
     wb.calculation.fullCalcOnLoad = True  # Excelで開いたときに強制再計算
     wb.save(out_path)
@@ -186,12 +213,14 @@ def main():
     for path in files:
         m = RAW_RE.match(os.path.basename(path))
         if not m:
+            print(f"[無視] {os.path.basename(path)} (命名規則 <label>_<f>Hz_<level>_<date>[-N].csv に合わない)")
             continue
         targets.append((path, m))
     if not targets:
-        print("対象の生データCSVが見つからない(命名規則: <label>_<f>Hz_<level>_<date>.csv)")
+        print("対象の生データCSVが見つからない(命名規則: <label>_<f>Hz_<level>_<date>[-N].csv)")
         return
 
+    os.makedirs(ETASTAR_DIR, exist_ok=True)
     print(f"テンプレート: {TEMPLATE_XLSX}")
 
     # 上書きしない分は先に除外してから、実際に処理する粒径だけ質問する
@@ -212,23 +241,34 @@ def main():
     if not to_process:
         return
 
-    labels = sorted({label for _, label, *_ in to_process})
-    print("\n粉体質量 m_p [g] を粒径ごとに入力してください(同じ粒径のファイルには同じ値を使う):")
+    # params.csv に値があるものはそれを使い、無いものだけ対話入力で聞く
+    params = load_params()
+    if params:
+        print(f"パラメータ表: {PARAMS_CSV}")
+    param_of = {path: params.get(os.path.basename(path), {}) for path, *_ in to_process}
+
+    labels = sorted({label for path, label, *_ in to_process if "m_p" not in param_of[path]})
+    if labels:
+        print("\n粉体質量 m_p [g] を粒径ごとに入力してください(同じ粒径のファイルには同じ値を使う):")
     m_p_by_label = {label: ask_m_p(label) for label in labels}
 
-    freqs = sorted({f_str for _, _, f_str, *_ in to_process}, key=lambda s: float(s))
-    print("\n使用するデータ点数 N を周波数ごとに入力してください(同じ周波数のファイルには同じ値を使う):")
+    freqs = sorted({f_str for path, _, f_str, *_ in to_process if "n_points" not in param_of[path]},
+                   key=lambda s: float(s))
+    if freqs:
+        print("\n使用するデータ点数 N を周波数ごとに入力してください(同じ周波数のファイルには同じ値を使う):")
     n_points_by_f = {f_str: ask_n_points(f_str) for f_str in freqs}
 
     need_mp = []
     print()
     for path, label, f_str, level, out_name, out_path, existed in to_process:
-        m_p = m_p_by_label[label]
-        n_points = n_points_by_f[f_str]
+        p = param_of[path]
+        m_p = p["m_p"] if "m_p" in p else m_p_by_label[label]
+        m_c = p.get("m_c", M_C_DEFAULT)
+        n_points = p["n_points"] if "n_points" in p else n_points_by_f[f_str]
         t, F, a = read_raw_csv(path)
         if n_points is not None:
             t, F, a = t[:n_points], F[:n_points], a[:n_points]
-        write_xlsx(label, f_str, level, t, F, a, out_path, m_p)
+        write_xlsx(label, f_str, level, t, F, a, out_path, m_p, m_c)
 
         tag = "[上書き]" if existed else "[新規]"
         print(f"{tag} {os.path.basename(path)}  ->  {out_name}  (N={len(t)}点, m_p={m_p})")

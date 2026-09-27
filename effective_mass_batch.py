@@ -3,7 +3,7 @@
 effective_mass_batch.py  (v2)
 eta_star_v5 形式の xlsx から粉体の複素有効質量 M_p を一括計算し、粒径別の図を作る。
 
-入力 : INPUT_DIR 内の eta_star_v5_<label>_<f>Hz_<level>.xlsx
+入力 : ETASTAR_DIR (既定 "data_0927/eta_star") 内の eta_star_v5_<label>_<f>Hz_<level>[_<date>[-N]].xlsx
         例) eta_star_v5_30um_500Hz_20.xlsx / eta_star_v5_box_1000Hz_10.xlsx
         - EtaStar_Acc : B6=f[Hz], B7=m_p[g], B8=m_c[g], B38=η*(検算用)
         - TimeData    : A=時刻[s], B=力[N], D=加速度[m/s^2]
@@ -29,8 +29,9 @@ import matplotlib.pyplot as plt
 
 # ===================== 設定 =====================
 INPUT_DIR = r"C:\Users\USER\Desktop\calcREIM"
-ETASTAR_DIR = os.path.join(INPUT_DIR, "eta_star")   # eta_star_v5_*.xlsx はここに格納
-OUTPUT_DIR = "./output"
+DATA_DIR = os.path.join(INPUT_DIR, "data_0927")     # 運用中のデータ一式(Rawdata/eta_star/output)
+ETASTAR_DIR = os.path.join(DATA_DIR, "eta_star")    # eta_star_v5_*.xlsx はここに格納
+OUTPUT_DIR = os.path.join(DATA_DIR, "output")
 EMPTY_LABELS = ["box"]          # 空ボックスのラベル (m_p=0 も空扱い)
 ACC_FACTOR = -1000 / 3.18       # D列が空のとき G列→加速度 換算
 
@@ -49,7 +50,7 @@ LEVEL_TO_ACC = 10               # 凡例表示: level×10 ≈ A [m/s^2]
 # ===============================================
 
 FNAME_RE = re.compile(
-    r"eta_star_v\d+_(?P<label>.+)_(?P<f>\d+(?:\.\d+)?)Hz_(?P<level>[^_.]+)(?:_(?P<date>\d+))?\.xlsx$",
+    r"eta_star_v\d+_(?P<label>.+)_(?P<f>\d+(?:\.\d+)?)Hz_(?P<level>[^_.]+)(?:_(?P<date>\d+(?:-\d+)?))?\.xlsx$",
     re.IGNORECASE)
 
 

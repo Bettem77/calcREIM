@@ -14,13 +14,14 @@ import matplotlib.pyplot as plt
 
 # ===================== 設定 =====================
 INPUT_DIR = r"C:\Users\USER\Desktop\calcREIM"
-ETASTAR_DIR = os.path.join(INPUT_DIR, "eta_star")   # eta_star_v5_*.xlsx はここに格納
-OUTPUT_DIR = "./output_waveform"
+DATA_DIR = os.path.join(INPUT_DIR, "data_0927")     # 運用中のデータ一式(Rawdata/eta_star/output)
+ETASTAR_DIR = os.path.join(DATA_DIR, "eta_star")    # eta_star_v5_*.xlsx はここに格納
+OUTPUT_DIR = os.path.join(DATA_DIR, "output_waveform")
 N_CYCLES = 3          # 先頭から何周期分を描くか (時間軸 = N_CYCLES / f)
 # ===============================================
 
 FNAME_RE = re.compile(
-    r"eta_star_v\d+_(?P<label>.+)_(?P<f>\d+(?:\.\d+)?)Hz_(?P<level>[^_.]+)(?:_(?P<date>\d+))?\.xlsx$",
+    r"eta_star_v\d+_(?P<label>.+)_(?P<f>\d+(?:\.\d+)?)Hz_(?P<level>[^_.]+)(?:_(?P<date>\d+(?:-\d+)?))?\.xlsx$",
     re.IGNORECASE)
 
 
